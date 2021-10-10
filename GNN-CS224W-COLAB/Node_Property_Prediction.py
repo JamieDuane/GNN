@@ -3,6 +3,8 @@ import torch
 import torch_geometric.transforms as T
 from ogb.nodeproppred import PygNodePropPredDataset
 
+#!!!! GraphGym !!!!!
+
 from torch_geometric.datasets import TUDataset
 root = './enzymes'
 name = 'ENZYMES'
@@ -56,6 +58,8 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 from ogb.nodeproppred import Evaluator
 data.adj_t = data.adj_t.to_symmetric()
+print(data.x)
+print(data.adj_t)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -63,18 +67,20 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 data = data.to(device)
 split_idx = dataset.get_idx_split()
+print(split_idx)
 train_idx = split_idx['train'].to(device)
+print(train_idx)
 
 class GCN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout, return_embeds=False):
         super(GCN, self).__init__()
         self.convs=torch.nn.ModuleList(
             [GCNConv(in_channels=input_dim, out_channels=hidden_dim)]+\
-            [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim) for i in range(num_layers-2)]+\
+            [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim) for _ in range(num_layers-2)]+\
             [GCNConv(in_channels=hidden_dim, out_channels=output_dim)]
         )
         self.bns = torch.nn.ModuleList(
-            [torch.nn.BatchNorm1d(num_features=hidden_dim) for i in range(num_layers-1)]
+            [torch.nn.BatchNorm1d(num_features=hidden_dim) for _ in range(num_layers-1)]
         )
         self.softmax = torch.nn.LogSoftmax()
         self.dropout = dropout
@@ -98,7 +104,6 @@ class GCN(torch.nn.Module):
 
 def train(model, data, train_idx, optimizer, loss_fn):
     model.train()
-    loss = 0
     optimizer.zero_grad()
     out = model(data.x, data.adj_t)
     loss = loss_fn(out[train_idx], data.y[train_idx].reshape(-1))
@@ -130,35 +135,38 @@ def test(model, data, split_idx, evaluator):
 
      return train_acc, valid_acc, test_acc
 
-args = {
-    'device': device,
-    'num_layers': 3,
-    'hidden_dim': 256,
-    'dropout': 0.5,
-    'lr': 0.01,
-    'epochs': 100,
-}
+def main():
+    args = {
+        'device': device,
+        'num_layers': 3,
+        'hidden_dim': 256,
+        'dropout': 0.5,
+        'lr': 0.01,
+        'epochs': 100,
+    }
 
-model = GCN(data.num_features, args['hidden_dim'], dataset.num_classes, args['num_layers'], args['dropout']).to(device)
-evaluator = Evaluator(name='ogbn-arxiv')
+    model = GCN(data.num_features, args['hidden_dim'], dataset.num_classes, args['num_layers'], args['dropout']).to(
+        device)
+    evaluator = Evaluator(name='ogbn-arxiv')
 
-import copy
-model.reset_parameters()
-optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-loss_fn = F.nll_loss
+    import copy
+    model.reset_parameters()
+    optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
+    loss_fn = F.nll_loss
 
-best_model = None
-best_valid_acc = 0
+    best_model = None
+    best_valid_acc = 0
 
-for epoch in range(1, 1+args["epochs"]):
-    loss = train(model, data, train_idx, optimizer, loss_fn)
-    result = test(model, data, split_idx, evaluator)
-    train_acc, valid_acc, test_acc = result
-    if valid_acc > best_valid_acc:
-        best_valid_acc = valid_acc
-        best_model = copy.deepcopy(model)
-    print(f'Epoch: {epoch:02d}, '
-          f'Loss: {loss:.4f}, '
-          f'Train: {100 * train_acc:.2f}%, '
-          f'Valid: {100 * valid_acc:.2f}% '
-          f'Test: {100 * test_acc:.2f}%')
+    for epoch in range(1, 1 + args["epochs"]):
+        loss = train(model, data, train_idx, optimizer, loss_fn)
+        result = test(model, data, split_idx, evaluator)
+        train_acc, valid_acc, test_acc = result
+        if valid_acc > best_valid_acc:
+            best_valid_acc = valid_acc
+            best_model = copy.deepcopy(model)
+        print(f'Epoch: {epoch:02d}, '
+              f'Loss: {loss:.4f}, '
+              f'Train: {100 * train_acc:.2f}%, '
+              f'Valid: {100 * valid_acc:.2f}% '
+              f'Test: {100 * test_acc:.2f}%')
+
